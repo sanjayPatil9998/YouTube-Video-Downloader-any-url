@@ -152,7 +152,9 @@ export default function App() {
     if (!url) return setError('Please enter a video URL')
     setLoadingInfo(true)
     try {
-      const resp = await fetch(`${SERVER_BASE}/info?url=${encodeURIComponent(url)}`)
+const resp = await fetch(
+ `${SERVER_BASE}/info?url=${encodeURIComponent(videoUrl)}`
+)
       if (!resp.ok) {
         const txt = await resp.text().catch(()=>null)
         setError(txt || 'Failed to get video info')
