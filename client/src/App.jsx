@@ -146,7 +146,7 @@ export default function App() {
     }
   }
 
-  const fetchVideo = async () => {
+  const fetchVideo = async (videoUrl = url) => {
     setError(null)
     setInfo(null)
     if (!url) return setError('Please enter a video URL')
