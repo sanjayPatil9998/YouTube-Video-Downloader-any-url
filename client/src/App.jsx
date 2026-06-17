@@ -12,7 +12,6 @@ import Brightness4Icon from '@mui/icons-material/Brightness4'
 import Brightness7Icon from '@mui/icons-material/Brightness7'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
-import MenuItem from '@mui/material/MenuItem'
 import LinearProgress from '@mui/material/LinearProgress'
 
 const SERVER_BASE = import.meta.env.VITE_SERVER_BASE || 'http://localhost:4000'
@@ -75,7 +74,27 @@ export default function App() {
     setDownloadedBytes(0)
     setTotalBytes(null)
     try {
-      const fetchUrl = targetUrl.startsWith(SERVER_BASE) ? targetUrl : `${SERVER_BASE}/download?url=${encodeURIComponent(targetUrl)}`
+      const fetchUrl = targetUrl.startsWith(SERVER_BASE)
+        ? targetUrl
+        : `${SERVER_BASE}/download?url=${encodeURIComponent(targetUrl)}`
+
+      // If we're already pointing to the server download endpoint, use a direct
+      // browser navigation (anchor click) so the browser handles Content-Disposition
+      // and saves the proper filename/extension instead of fetching via XHR.
+      if (fetchUrl.startsWith(SERVER_BASE)) {
+        const a = document.createElement('a')
+        a.href = fetchUrl
+        a.target = '_blank'
+        a.rel = 'noopener'
+        a.style.display = 'none'
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        setDownloading(false)
+        setProgress(0)
+        return
+      }
+
       const resp = await fetch(fetchUrl)
       if (!resp.ok) {
         const txt = await resp.text().catch(()=>null)
@@ -148,10 +167,7 @@ export default function App() {
           if (size == null) continue
           if (!smallest || size < smallest.size) smallest = { format: f.format || f.format_id, size }
         }
-        if (smallest) setSelectedFormat(smallest.format)
-        else setSelectedFormat('')
       } else {
-        setSelectedFormat('')
       }
     } catch (e) {
       setError('Failed to fetch video')
@@ -175,7 +191,7 @@ export default function App() {
     }
   }, [])
 
-  const [selectedFormat, setSelectedFormat] = useState(null)
+  // No format selection; server will choose best available format
 
   return (
     <ThemeProvider theme={theme}>
@@ -211,24 +227,12 @@ export default function App() {
                 <Typography variant="h6">{info.title}</Typography>
                 {info.uploader && <Typography color="text.secondary">{info.uploader}</Typography>}
                 {info.duration != null && <Typography color="text.secondary">Duration: {Math.round(info.duration)}s</Typography>}
-                {info.formats && info.formats.length > 0 && (
-                  <Box sx={{mt:2}}>
-                    <TextField select label="Format" value={selectedFormat || ''} onChange={e=>setSelectedFormat(e.target.value)} sx={{minWidth:220}}>
-                      <MenuItem value="">(best)</MenuItem>
-                      {info.formats.map((f, idx) => (
-                        <MenuItem key={idx} value={f.format || f.format_id}>{f.format || `${f.ext} ${f.width||''}x${f.height||''}`} {f.filesize?`(${Math.round(f.filesize/1024)} KB)`:''}</MenuItem>
-                      ))}
-                    </TextField>
-                    <Box sx={{mt:2}}>
-                      <Button variant="contained" onClick={() => {
-                        const params = []
-                        if (selectedFormat) params.push(`format=${encodeURIComponent(selectedFormat)}`)
-                        const downloadUrl = `${SERVER_BASE}/download?url=${encodeURIComponent(info.webpage_url || url)}${params.length ? '&' + params.join('&') : ''}`
-                        fetchDownload(downloadUrl)
-                      }}>{downloading ? 'Starting...' : 'Download this video'}</Button>
-                    </Box>
-                  </Box>
-                )}
+                <Box sx={{mt:2}}>
+                  <Button variant="contained" onClick={() => {
+                    const downloadUrl = `${SERVER_BASE}/download?url=${encodeURIComponent(info.webpage_url || url)}`
+                    fetchDownload(downloadUrl)
+                  }}>{downloading ? 'Starting...' : 'Download'}</Button>
+                </Box>
               </Box>
             </CardContent>
           </Card>
