@@ -66,7 +66,7 @@ export default function App() {
   const handleDownload = (e) => {
     e && e.preventDefault()
     setError(null)
-    if (!url) return setError('Please enter a video URL')
+    if (!videoUrl) return setError('Please enter a video URL')
     fetchDownload(url)
   }
 
