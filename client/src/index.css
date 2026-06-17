@@ -1,0 +1,38 @@
+:root {
+	--bg-1: #ff1d58; /* user requested background */
+	--bg-2: #ff6b92; /* lighter complement */
+	--card-bg: #ffffff;
+	--muted: #6b7280;
+	--accent-1: #06b6d4; /* cyan */
+	--accent-2: #8b5cf6; /* violet */
+}
+
+html, body, #root { height: 100%; }
+body {
+	margin: 0;
+	padding: 0;
+	background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
+	font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	color: #fff;
+}
+
+/* center the MUI container vertically */
+.MuiContainer-root { display: flex; align-items: center; justify-content: center; }
+
+/* glass-style card */
+.glass-card {
+	background: rgba(255,255,255,0.65);
+	backdrop-filter: blur(8px) saturate(120%);
+	-webkit-backdrop-filter: blur(8px) saturate(120%);
+	border: 1px solid rgba(255,255,255,0.6);
+}
+
+/* topbar: title + theme toggle */
+.topbar { width: 100%; display:flex; align-items:center; justify-content:space-between }
+
+/* subtle rounded buttons (MUI buttons will inherit but keep as fallback) */
+.rounded-btn { border-radius: 999px; }
+
+input, button { font-family: inherit }
