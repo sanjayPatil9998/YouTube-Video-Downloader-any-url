@@ -14,7 +14,9 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import LinearProgress from '@mui/material/LinearProgress'
 
-const SERVER_BASE = import.meta.env.VITE_SERVER_BASE || 'http://localhost:4000'
+const SERVER_BASE =
+import.meta.env.VITE_SERVER_BASE ||
+'https://youtube-video-downloader-any-url.onrender.com'
 
 // Theme will be created dynamically inside the component so we can toggle light/dark
 
