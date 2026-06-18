@@ -14,9 +14,13 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import LinearProgress from '@mui/material/LinearProgress'
 
+<<<<<<< HEAD
 const SERVER_BASE =
 import.meta.env.VITE_SERVER_BASE ||
 'https://youtube-video-downloader-any-url.onrender.com'
+=======
+const SERVER_BASE = (import.meta.env.VITE_SERVER_BASE || 'http://localhost:4000').replace(/\/$/, '')
+>>>>>>> 86516ecd (Fix URL encoding and normalize SERVER_BASE; redirect duplicate slashes)
 
 // Theme will be created dynamically inside the component so we can toggle light/dark
 
@@ -76,6 +80,10 @@ export default function App() {
     setDownloadedBytes(0)
     setTotalBytes(null)
     try {
+      if (typeof targetUrl !== 'string') {
+        throw new Error('Invalid target URL')
+      }
+
       const fetchUrl = targetUrl.startsWith(SERVER_BASE)
         ? targetUrl
         : `${SERVER_BASE}/download?url=${encodeURIComponent(targetUrl)}`
@@ -152,9 +160,19 @@ export default function App() {
     if (!url) return setError('Please enter a video URL')
     setLoadingInfo(true)
     try {
+<<<<<<< HEAD
 const resp = await fetch(
  `${SERVER_BASE}/info?url=${encodeURIComponent(videoUrl)}`
 )
+=======
+      if (typeof url !== 'string') {
+        setError('Invalid URL')
+        setLoadingInfo(false)
+        return
+      }
+
+      const resp = await fetch(`${SERVER_BASE}/info?url=${encodeURIComponent(url)}`)
+>>>>>>> 86516ecd (Fix URL encoding and normalize SERVER_BASE; redirect duplicate slashes)
       if (!resp.ok) {
         const txt = await resp.text().catch(()=>null)
         setError(txt || 'Failed to get video info')

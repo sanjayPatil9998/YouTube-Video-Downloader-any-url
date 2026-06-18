@@ -8,6 +8,43 @@ const fs = require('fs');
 const app = express();
 app.use(cors());
 
+// Normalize duplicate slashes in request URL (e.g. //info) to avoid 404s
+app.use((req, res, next) => {
+  // If the original URL (what the client requested) contains multiple
+  // consecutive slashes, redirect the client to the normalized path.
+  // This ensures the browser's address bar and subsequent requests are correct
+  // (Express's default 404 shows the original path, so rewriting req.url alone
+  // doesn't change that message).
+  if (req.originalUrl && /\/\/{2,}/.test(req.originalUrl)) {
+    const normalized = req.originalUrl.replace(/\/\/{2,}/g, '/');
+    return res.redirect(307, normalized);
+  }
+  next();
+});
+
+// Helper: find a usable invocation for yt-dlp. Tries Python module via
+// 'py -3 -m yt_dlp', 'python -m yt_dlp', 'python3 -m yt_dlp', then the
+// 'yt-dlp' executable in PATH.
+function findYtDlpInvoker() {
+  const tries = [
+    { cmd: 'py', args: ['-3', '-m', 'yt_dlp'] },
+    { cmd: 'python', args: ['-m', 'yt_dlp'] },
+    { cmd: 'python3', args: ['-m', 'yt_dlp'] },
+    { cmd: 'yt-dlp', args: [] }
+  ];
+  for (const t of tries) {
+    try {
+      const check = spawnSync(t.cmd, [...t.args, '--version'], { encoding: 'utf8' });
+      if (!check.error && check.status === 0 && check.stdout) {
+        return t;
+      }
+    } catch (e) {
+      // continue trying
+    }
+  }
+  return null;
+}
+
 // If client is built, serve static files from client/dist so visiting / works
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(clientDist)) {
@@ -27,6 +64,18 @@ async function tryHead(url) {
   } catch (e) {
     return { contentType: '', contentLength: null };
   }
+}
+
+function makeContentDisposition(name) {
+  if (!name) name = 'video'
+  // Remove control characters/newlines and force an ASCII fallback for `filename`
+  const stripped = name.replace(/[\r\n\t\0\x00-\x1F\x7F]/g, '');
+  // Normalize and drop non-ASCII for the basic filename header (some browsers use this)
+  let ascii = stripped.normalize ? stripped.normalize('NFKD').replace(/[^\x20-\x7E]/g, '') : stripped.replace(/[^\x20-\x7E]/g, '');
+  if (!ascii) ascii = 'video';
+  const safe = ascii.replace(/"/g, "'");
+  const encoded = encodeURIComponent(name);
+  return `attachment; filename="${safe}"; filename*=UTF-8''${encoded}`;
 }
 
 app.get('/download', async (req, res) => {
@@ -49,10 +98,14 @@ app.get('/download', async (req, res) => {
         contentType = testResp.headers.get('content-type') || '';
         contentLength = contentLength || testResp.headers.get('content-length');
         if (contentType.startsWith('video/')) {
-          const filename = path.basename(parsed.pathname) || 'video';
-          res.setHeader('Content-Type', contentType);
-          if (contentLength) res.setHeader('Content-Length', contentLength);
-          res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            const filename = path.basename(parsed.pathname) || 'video';
+            res.setHeader('Content-Type', contentType);
+            if (contentLength) res.setHeader('Content-Length', contentLength);
+            console.log('Raw filename (direct video test):', JSON.stringify(filename));
+            console.log('Filename codes:', Array.from(filename || '').map(c=>c.charCodeAt(0)));
+            const cd1 = makeContentDisposition(filename);
+            console.log('Content-Disposition (direct video test):', cd1);
+            res.setHeader('Content-Disposition', cd1);
           return testResp.body.pipe(res);
         }
       } catch (e) {
@@ -70,38 +123,45 @@ app.get('/download', async (req, res) => {
       const resp = await fetch(url);
       res.setHeader('Content-Type', contentType);
       if (contentLength) res.setHeader('Content-Length', contentLength);
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      console.log('Raw filename (proxied video):', JSON.stringify(filename));
+      console.log('Filename codes:', Array.from(filename || '').map(c=>c.charCodeAt(0)));
+      const cd2 = makeContentDisposition(filename);
+      console.log('Content-Disposition (proxied video):', cd2);
+      res.setHeader('Content-Disposition', cd2);
       return resp.body.pipe(res);
     }
 
     // Not a direct video resource — attempt to use yt-dlp to resolve and stream
-    // This requires `yt-dlp` to be installed on the system (pip install yt-dlp) or available in PATH.
-    // Prefer using the Python module entrypoint so it works regardless of PATH on Windows
-    const check = spawnSync('py', ['-3', '-m', 'yt_dlp', '--version'], { encoding: 'utf8' });
-    if (check.error) {
-      console.error('yt-dlp not available via python module:', check.error.message);
+    // Find a usable invocation (py/python/yt-dlp) so this works on various setups
+    const invoker = findYtDlpInvoker();
+    if (!invoker) {
+      console.error('yt-dlp not available via any known invocation');
       return res.status(400).send('URL is not a direct video and `yt-dlp` is not available. Install yt-dlp (e.g. `python -m pip install yt-dlp`) to enable site downloads.');
     }
 
     // Get a sensible filename from yt-dlp
     let filename = 'video';
     try {
-      const nameArgs = ['-3', '-m', 'yt_dlp', '--get-filename', '-o', '%(title)s.%(ext)s', url];
-      if (format) nameArgs.push('-f', format);
-      const nameProc = spawnSync('py', nameArgs, { encoding: 'utf8' });
+      const nameCmdArgs = [...invoker.args, '--get-filename', '-o', '%(title)s.%(ext)s', url];
+      if (format) nameCmdArgs.push('-f', format);
+      const nameProc = spawnSync(invoker.cmd, nameCmdArgs, { encoding: 'utf8' });
       if (!nameProc.error && nameProc.stdout) filename = nameProc.stdout.trim();
     } catch (e) {
       // ignore, leave default filename
     }
 
     res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    console.log('Raw filename (yt-dlp):', JSON.stringify(filename));
+    console.log('Filename codes:', Array.from(filename || '').map(c=>c.charCodeAt(0)));
+    const cd3 = makeContentDisposition(filename);
+    console.log('Content-Disposition (yt-dlp):', cd3);
+    res.setHeader('Content-Disposition', cd3);
 
-    const dlArgs = ['-3', '-m', 'yt_dlp'];
-    if (format) dlArgs.push('-f', format);
-    else dlArgs.push('-f', 'best');
-    dlArgs.push('-o', '-', '--no-playlist', url);
-    const dl = spawn('py', dlArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const dlCmdArgs = [...invoker.args];
+    if (format) dlCmdArgs.push('-f', format);
+    else dlCmdArgs.push('-f', 'best');
+    dlCmdArgs.push('-o', '-', '--no-playlist', url);
+    const dl = spawn(invoker.cmd, dlCmdArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
     dl.stdout.pipe(res);
     dl.stderr.on('data', (d) => console.error('yt-dlp:', d.toString()));
     dl.on('error', (err) => {
@@ -121,12 +181,10 @@ app.get('/info', async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).send('Missing url parameter.');
   try {
-    const check = spawnSync('py', ['-3', '-m', 'yt_dlp', '--version'], { encoding: 'utf8' });
-    if (check.error) {
-      return res.status(400).send('`yt-dlp` is not available on the server.');
-    }
+    const invoker = findYtDlpInvoker();
+    if (!invoker) return res.status(400).send('`yt-dlp` is not available on the server.');
 
-    const proc = spawnSync('py', ['-3', '-m', 'yt_dlp', '--dump-single-json', url], { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
+    const proc = spawnSync(invoker.cmd, [...invoker.args, '--dump-single-json', url], { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
     if (proc.error) {
       console.error('yt-dlp error', proc.error);
       return res.status(500).send('Failed to run yt-dlp');
